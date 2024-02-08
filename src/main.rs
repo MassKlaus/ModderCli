@@ -1,34 +1,34 @@
 #![allow(non_snake_case)]
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Error, Parser};
 
 mod args;
-mod mod_info;
 mod branch;
+mod mod_info;
 
-fn main() {
+fn main() -> Result<(), Error>{
     let args = args::CliArgs::parse();
 
-    println!("{:?}", args);
-
-    let root_folder_option = FindRootFolder();
+    let root_folder_option = FindRootFolder()?;
 
     if root_folder_option == None {
         match args.action_context {
             args::ActionContext::Init => {
-                let current_folder = std::env::current_dir().unwrap();
-                Init(&current_folder);
+                let current_folder = std::env::current_dir()?;
+                Init(&current_folder)?;
             }
             _ => {
                 println!("You need to initialize a workspace first.\nUse 'ModderCli -h' for help.");
             }
         }
 
-        return;
+        return Ok(());
     }
 
     let root_folder = root_folder_option.unwrap();
+    let info_path = root_folder.join(".info");
+    let mod_info = mod_info::ModInfo::load_info(&info_path)?;
 
     match args.action_context {
         args::ActionContext::Init => {
@@ -38,31 +38,35 @@ fn main() {
             args::branches::BranchAction::Switch(value) => {
                 println!("Switch to branch: {}", value.value);
             }
-            args::branches::BranchAction::Create(value) => {
-                CreateBranch(&root_folder, &value.value)
-            },
+            args::branches::BranchAction::Create(value) => _ = CreateBranch(&root_folder, &value.value),
             args::branches::BranchAction::Delete(value) => {
                 println!("Delete branch: {}", value.value);
             }
             args::branches::BranchAction::List => {
-                println!("List branches");
+                ListBranches(&root_folder)?;
             }
         },
+        args::ActionContext::Save => {
+            _ = SaveCurrentState(root_folder, mod_info.current_branch)?;
+        }
     }
+
+    Ok(())
 }
 
-fn FindRootFolder() -> Option<PathBuf> {
+fn FindRootFolder() -> Result<Option<PathBuf>, std::io::Error> {
     // Find the root folder of the project
-    let mut path = std::env::current_dir().unwrap();
+    let mut path = std::env::current_dir()?;
     let mut found = false;
     let mut count = 0;
 
     // limit it to 10 levels deep
     while !found && count < 10 {
-        let dir = std::fs::read_dir(&path).unwrap();
+        let dir = std::fs::read_dir(&path)?;
 
         for entry in dir {
-            let entry = entry.unwrap();
+            let entry = entry?;
+
             if entry.file_name() == ".info" {
                 found = true;
                 break;
@@ -79,7 +83,7 @@ fn FindRootFolder() -> Option<PathBuf> {
         count += 1;
     }
 
-    return if found { Some(path) } else { None };
+    return if found { Ok(Some(path)) } else { Ok(None) };
 }
 
 fn getModInfoFromUser() -> mod_info::ModInfo {
@@ -111,7 +115,7 @@ fn getModInfoFromUser() -> mod_info::ModInfo {
     return mod_info::ModInfo::new(name, author, description, "main".to_string());
 }
 
-fn Init(root_folder: &PathBuf) {
+fn Init(root_folder: &PathBuf) -> Result<(), std::io::Error>{
     // Create a new workspace in the current directory
     println!("Init");
 
@@ -119,7 +123,7 @@ fn Init(root_folder: &PathBuf) {
 
     let info_file = root_folder.join(".info");
     // Create file .info to store info about the project workflow
-    let json = serde_json::to_string_pretty(&info).unwrap();
+    let json = serde_json::to_string_pretty(&info)?;
     _ = std::fs::write(info_file, json);
 
     let src_folder = root_folder.join("src");
@@ -141,15 +145,17 @@ fn Init(root_folder: &PathBuf) {
     let branch = branch::Branch::new("main".to_string(), "Main branch".to_string(), 1);
 
     let branches = vec![branch];
-    branch::Branch::save_branches(&branches_file, branches);
+    branch::Branch::save_branches(&branches_file, branches)?;
 
     println!("Workspace initialized.");
 
     print!("Put your source files in the src folder and use 'ModderCli branch create <branch_name>' to create a new branch.");
-    print!("Default branch is 'main'.")
+    print!("Default branch is 'main'.");
+
+    Ok(())
 }
 
-fn CreateBranch(root: &PathBuf, branchName: &str) {
+fn CreateBranch(root: &PathBuf, branchName: &str) -> Result<(), std::io::Error> {
     // Create a new branch
     println!("Create branch");
 
@@ -161,13 +167,13 @@ fn CreateBranch(root: &PathBuf, branchName: &str) {
     let branch = branch::Branch::new(branchName.to_string(), "New branch".to_string(), 1);
 
     // Load the branches file
-    let mut branches = branch::Branch::load_branches(&branchFile);
+    let mut branches = branch::Branch::load_branches(&branchFile)?;
 
     // check if branch already exists
     for b in &branches {
         if b.name == branchName {
             println!("Branch already exists.");
-            return;
+            return Ok(());
         }
     }
 
@@ -178,5 +184,51 @@ fn CreateBranch(root: &PathBuf, branchName: &str) {
     branches.push(branch);
 
     // Save the branches file
-    branch::Branch::save_branches(&branchFile, branches);
+    branch::Branch::save_branches(&branchFile, branches)?;
+
+    println!("Branch created.");
+    Ok(())
+}
+
+fn ListBranches(root: &PathBuf) -> Result<(), std::io::Error> {
+    // List all branches
+    println!("Branches:");
+
+    let branchFiles = root.join("branches").join(".branches");
+
+    let branches = branch::Branch::load_branches(&branchFiles)?;
+
+    for branch in &branches {
+        println!(
+            "• {} (v.{}): {}",
+            branch.name, branch.version, branch.description
+        );
+    }
+
+    Ok(())
+}
+
+fn SaveCurrentState(root: PathBuf, currentBranch: String) -> Result<(), std::io::Error> {
+    // Save the current state of the mod to the current branch
+    println!("Saving current state to branch: {}", currentBranch);
+
+    let srcFolder = root.join("src");
+    let branchFolder = root.join("branches").join(&currentBranch);
+
+    // copy the files in the src folder to the branch folder
+    let srcFiles = std::fs::read_dir(&srcFolder)?;
+
+    for file in srcFiles {
+        let file = file?;
+        let file_name = file.file_name();
+        let file_path = file.path();
+
+        let new_file_path = branchFolder.join(file_name);
+
+        _ = std::fs::copy(file_path, new_file_path);
+    }
+
+    println!("Current state saved to branch: {}", currentBranch);
+
+    Ok(())
 }

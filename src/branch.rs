@@ -19,16 +19,18 @@ impl Branch {
         }
     }
 
-    pub fn load_branches(branchesFile: &PathBuf) -> Vec<Branch> {
-        let branches = std::fs::read_to_string(branchesFile).unwrap();
-        let branches: Vec<Branch> = serde_json::from_str(&branches).unwrap();
+    pub fn load_branches(branchesFile: &PathBuf) -> Result<Vec<Branch>, std::io::Error> {
+        let branches = std::fs::read_to_string(branchesFile)?;
+        let branches: Vec<Branch> = serde_json::from_str(&branches)?;
 
-        branches
+        Ok(branches)
     }
 
-    pub fn save_branches(branchesFile: &PathBuf, branches: Vec<Branch>) {
-        let json = serde_json::to_string_pretty(&branches).unwrap();
-        _ = std::fs::write(branchesFile, json);
+    pub fn save_branches(branchesFile: &PathBuf, branches: Vec<Branch>) -> Result<(), std::io::Error>{
+        let json = serde_json::to_string_pretty(&branches)?;
+        _ = std::fs::write(branchesFile, json)?;
+
+        Ok(())
     }
     
 }

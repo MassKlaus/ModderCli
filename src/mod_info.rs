@@ -18,4 +18,11 @@ impl ModInfo {
             current_branch,
         }
     }
+
+    pub fn load_info(info_file: &std::path::PathBuf) -> Result<ModInfo, std::io::Error> {
+        let info = std::fs::read_to_string(info_file)?;
+        let info: ModInfo = serde_json::from_str(&info)?;
+
+        Ok(info)
+    }
 }

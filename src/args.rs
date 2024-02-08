@@ -20,4 +20,7 @@ pub enum ActionContext {
 
     /// Manage the branch of the mod that is loaded in the work space, allows for switching between branches
     Branch(BranchComand),
+
+    /// Save the current state of the mod to the current branch
+    Save,
 }
