@@ -5,7 +5,7 @@ pub mod branches;
 use branches::BranchComand;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command()]
 /// A simple modding tool to manage mod files so I don't go insane working on them.
 pub struct CliArgs {
     #[command(subcommand)]
