@@ -2,6 +2,20 @@
 
 ModderCli is a command line tool to help you manage your modding projects. I am making this to help me mod sekiro, but it should work for any game so long as you tweak things around.
 
+## Table of Contents
+
+- [ModderCli](#moddercli)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+    - [Why does this exist?](#why-does-this-exist)
+  - [Target Workflow](#target-workflow)
+    - [What is this?](#what-is-this)
+    - [What is this not?](#what-is-this-not)
+  - [Installation](#installation)
+    - [Current Prerequisites](#current-prerequisites)
+    - [How to install](#how-to-install)
+  - [Roadmap](#roadmap)
+
 ## Introduction
 
 ### Why does this exist?
@@ -26,6 +40,7 @@ I hate repetetive workflows. In the case of Sekiro Modding the usual experience 
         2. Copy the files to the backup folder 
 12. Repeat steps 3-7 until you are happy with the changes
 
+
 After a while, this gets really annoying. So I made a few things to make my life easier.
 
 My first tool was just a .bat that repacked the files and copied them to the mods folder and started the game. This was good, but I still had to manually make backups and unpack the files. But it required manually copying the file names and paths for Yabber.
@@ -39,6 +54,9 @@ My fourth tool just generated a list of textures to paste into the Yabber config
 Now, I decided that having that many tools scattered around wasn't for the best, so I decided to make a single tool that could do all of these things and more and this time share it instead of letting pick dust.
 
 The caveat? Most tools in the DS realm are made in C# or C++, but I am making this in Rust. Why? Because I wanted to learn more about it. I also want to make it cross platform, so that's a plus. A C# rewrite could come later if I feel like it that way this tool could maybe turn in a GUI tool.
+
+
+## Target Workflow
 
 The final worflow with this tool should be as follows:
 
