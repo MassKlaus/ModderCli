@@ -6,7 +6,7 @@ ModderCli is a command line tool to help you manage your modding projects. I am 
 
 ### Why does this exist?
 
-I hate repetetive workflows. In the case of Sekiro Modding the usual experience to make a mod is as follows:
+I hate repetetive workflows. In the case of Sekiro Modding the usual experience to make a mod for me is as follows:
 
 1. Get the files you want to mod
 2. Create a backup folder
