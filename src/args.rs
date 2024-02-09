@@ -1,5 +1,6 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
+pub mod value;
 pub mod branches;
 
 use branches::BranchComand;
@@ -12,11 +13,16 @@ pub struct CliArgs {
     pub action_context: ActionContext,
 }
 
+#[derive(Args, Debug)]
+pub struct InitCommand {
+    pub folderName: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ActionContext {
 
     /// Initialize a new workspace in the current directory
-    Init,
+    Init(InitCommand),
 
     /// Manage the branch of the mod that is loaded in the work space, allows for switching between branches
     Branch(BranchComand),
