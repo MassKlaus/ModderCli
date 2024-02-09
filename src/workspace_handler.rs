@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{branch::Branch, mod_info::ModInfo};
 
@@ -8,19 +8,22 @@ pub struct Workspace {
     pub root_folder: PathBuf,
     pub info: ModInfo,
     pub branches: Vec<Branch>,
+    pub ignore_files_pattern: Vec<String>,
 }
 
 pub enum SwitchResult {
     Success,
-    NoFileMove
+    AlreadtInBranch,
+    NoFileMove,
 }
 
 impl Workspace {
-    pub fn new(root_folder: PathBuf, info: ModInfo, branches: Vec<Branch>) -> Workspace {
+    pub fn new(root_folder: PathBuf, info: ModInfo, branches: Vec<Branch>, ignore_files_pattern: Vec<String>) -> Workspace {
         Workspace {
             root_folder,
             info,
             branches,
+            ignore_files_pattern,
         }
     }
 
@@ -45,11 +48,22 @@ impl Workspace {
         let branch_file = root_folder.join("branches/.branches");
         let branches = Workspace::load_branches(&branch_file)?;
 
-        Ok(Workspace {
-            root_folder,
-            info,
-            branches,
-        })
+        let ignore_files_patterns = Workspace::load_ignore_patterns(&root_folder)?;
+
+        Ok(Workspace::new(root_folder, info, branches, ignore_files_patterns))
+    }
+
+    fn load_ignore_patterns(root_folder: &Path) -> Result<Vec<String>, std::io::Error> {
+        let ignore_file = root_folder.join(".ignore");
+
+        if !ignore_file.exists() {
+            return Ok(vec![]);
+        }
+
+        let ignore_file = std::fs::read_to_string(&ignore_file)?;
+        let ignore_file = ignore_file.lines().map(|l| l.to_string()).collect();
+
+        Ok(ignore_file)
     }
 
     fn load_branches(branch_file: &PathBuf) -> Result<Vec<Branch>, std::io::Error> {
@@ -132,7 +146,7 @@ impl Workspace {
         let branch = Branch::new("main".to_string(), "Main branch".to_string(), 1);
         let branches = vec![];
 
-        let mut workspace = Workspace::new(root_folder, info, branches);
+        let mut workspace = Workspace::new(root_folder, info, branches, vec![]);
         workspace.add_branch(branch)?;
         workspace.save()?;
 
@@ -192,7 +206,12 @@ impl Workspace {
 
     pub fn switch_branch(&mut self, name: &str) -> Result<SwitchResult, std::io::Error> {
         // check if branch exists
+        if self.info.current_branch == Some(name.to_string()) {
+            return Ok(SwitchResult::AlreadtInBranch);
+        }
+
         let found = self.branches.iter().find(|b| b.name == name);
+
 
         let branch = match found {
             Some(b) => b,
@@ -223,21 +242,22 @@ impl Workspace {
 
         let src_folder = self.src_folder_path();
 
-        // check if the branch folder is empty
-        let dir = std::fs::read_dir(&version_folder)?;
+        // clear the src folder without deleting it
+        let src_files = std::fs::read_dir(&src_folder)?;
 
-        for entry in dir {
-            let entry = entry?;
+        for file in src_files {
+            let file = file?;
+            let file_path = file.path();
 
-            if entry.file_type()?.is_file() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Branch Folder Empty, No files removed or moved.",
-                ));
+            if file_path.is_file() {
+                _ = std::fs::remove_file(&file_path);
+            }
+            else if file_path.is_dir() {
+                _ = std::fs::remove_dir_all(&file_path);
             }
         }
 
-        Workspace::recurcive_copy(&version_folder, &src_folder)?;
+        Workspace::recurcive_copy(&version_folder, &src_folder, &None)?;
 
         Ok(SwitchResult::Success)
     }
@@ -335,13 +355,27 @@ impl Workspace {
         _ = std::fs::create_dir_all(&new_branch_folder);
 
         if self.info.top_files_only {
-            Workspace::top_level_copy(&src_folder, &new_branch_folder)
+            Workspace::top_level_copy(&src_folder, &new_branch_folder, &self.info.file_type)
         } else {
-            Workspace::recurcive_copy(&src_folder, &new_branch_folder)
+            Workspace::recurcive_copy(&src_folder, &new_branch_folder, &self.info.file_type)
         }
     }
 
-    fn top_level_copy(src: &PathBuf, dest: &PathBuf) -> Result<(), std::io::Error> {
+    fn allow_copy(file: &PathBuf, allowed_file_type: &Option<String>) -> bool {
+        let allowed_file_type = match allowed_file_type {
+            Some(t) => t,
+            None => return true,
+        };
+        let file_name = file.file_name().unwrap().to_str().unwrap();
+
+        file_name.ends_with(allowed_file_type)
+    }
+
+    fn top_level_copy(
+        src: &PathBuf,
+        dest: &PathBuf,
+        fileType: &Option<String>,
+    ) -> Result<(), std::io::Error> {
         // copy the files in the src folder to the branch folder
         let srcFiles = std::fs::read_dir(&src)?;
 
@@ -352,7 +386,7 @@ impl Workspace {
 
             let new_file_path = dest.join(file_name);
 
-            if file_path.is_file() {
+            if file_path.is_file() && Workspace::allow_copy(&file_path, fileType) {
                 _ = std::fs::copy(file_path, new_file_path);
             }
         }
@@ -360,24 +394,91 @@ impl Workspace {
         Ok(())
     }
 
-    fn recurcive_copy(src: &PathBuf, dest: &PathBuf) -> Result<(), std::io::Error> {
+    fn explore_folders_recursive(
+        start: &Path,
+        fileType: &Option<String>,
+        list: &mut Vec<PathBuf>,
+    ) -> Result<(), std::io::Error> {
         // copy the files in the src folder to the branch folder
-        let srcFiles = std::fs::read_dir(&src)?;
+        let srcFiles = std::fs::read_dir(&start)?;
 
         for file in srcFiles {
             let file = file?;
-            let file_name = file.file_name();
             let file_path = file.path();
 
-            let new_file_path = dest.join(file_name);
-
             if file_path.is_dir() {
-                _ = std::fs::create_dir(&new_file_path);
-                Workspace::recurcive_copy(&file_path, &new_file_path)?;
+                Workspace::explore_folders_recursive(&file_path, fileType, list)?;
             } else {
-                _ = std::fs::copy(file_path, new_file_path);
+                if Workspace::allow_copy(&file_path, fileType) {
+                    list.push(file_path);
+                }
             }
         }
+
+        Ok(())
+    }
+
+    fn recurcive_copy(
+        src: &Path,
+        dest: &Path,
+        fileType: &Option<String>,
+    ) -> Result<(), std::io::Error> {
+        // copy the files in the src folder to the branch folder
+        let mut files = vec![];
+
+        // we get the entire list of files we want to copy first
+        Workspace::explore_folders_recursive(src, fileType, &mut files)?;
+
+        println!("Started copying files to branch folder.");
+
+        // create a set of parent folders
+        let mut hashset_folders = std::collections::HashSet::new();
+
+        // using a set we can ensure we only create the folders once
+        // avoiding us future checks against the operating system
+        for file in &files {
+            let parent = file.parent();
+            let folder = match parent {
+                Some(f) => f,
+                None => continue,
+            };
+
+            hashset_folders.insert(folder);
+        }
+
+
+        let mut final_hashset_folders = std::collections::HashSet::new();
+
+        // when src/test/files/ and src/test/files/deeper/ are both in the list
+        // we remove the smallest folder from the list
+        // so we avoid possible systemcalls to check if the folder exists
+        for folder in &hashset_folders {
+            let mut remove = false;
+            
+            for folder2 in &hashset_folders {
+                if folder.starts_with(folder2) && !folder.eq(folder2) {
+                    remove = true;
+                    break;
+                }
+            }
+
+            if !remove {
+                final_hashset_folders.insert(folder);
+            }
+        }
+
+
+        for folder in final_hashset_folders {
+            let new_folder = dest.join(folder.strip_prefix(src).unwrap());
+            _ = std::fs::create_dir_all(new_folder);
+        }
+
+        for file in files {
+            let new_file = dest.join(file.strip_prefix(src).unwrap());
+            _ = std::fs::copy(&file, new_file);
+        }
+
+        println!("Copied files to branch folder.");
 
         Ok(())
     }

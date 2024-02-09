@@ -101,9 +101,9 @@ This is not a mod manager. This is not a mod installer. This is not a mod loader
   - [X] Save the current state of the src folder after switching
 - [x] Save current state of src to current branch
   - [X] Save recursively or only top level src files
-  - [ ] Limit saving to specific file types
+  - [X] Limit saving to specific file types
+  - [X] Save per version
   - [ ] Use .ignore file to ignore files
-  - [ ] Save per version
   - [ ] Avoid Repeating files by keeping a hashcheck of the files and only saving new files (should be a setting)
 - [X] Delete branches
 - [ ] Restore branches

@@ -76,26 +76,28 @@ fn handleCommand(workspace: &mut Workspace, args: ActionContext) -> Result<(), s
                 let res = workspace.switch_branch(&value.branch);
 
                 match res {
-                    Ok(e) => {
-                        println!("Switched to branch: {}", value.branch);
-
-                        match e {
-                            SwitchResult::Success => {}
-                            SwitchResult::NoFileMove => {
-                                println!("No files were moved to the src folder as the branch is empty.");
-                            }
+                    Ok(e) => match e {
+                        SwitchResult::Success => {
+                            println!("Switched to branch: {}", value.branch);
                         }
-                    }
-                    Err(e) => {
-                        match e.kind() {
-                            std::io::ErrorKind::NotFound => {
-                                println!("Branch {} not found.", value.branch);
-                            }
-                            _ => {
-                                println!("Failed to switch branch: {}", e);
-                            }
+                        SwitchResult::AlreadtInBranch => {
+                            println!("Already in branch: {}", value.branch);
                         }
-                    }
+                        SwitchResult::NoFileMove => {
+                            println!("Switched to branch: {}", value.branch);
+                            println!(
+                                "No files were moved to the src folder as the branch is empty."
+                            );
+                        }
+                    },
+                    Err(e) => match e.kind() {
+                        std::io::ErrorKind::NotFound => {
+                            println!("Branch {} not found.", value.branch);
+                        }
+                        _ => {
+                            println!("Failed to switch branch: {}", e);
+                        }
+                    },
                 }
             }
             branches::BranchAction::Create(value) => {
@@ -107,13 +109,17 @@ fn handleCommand(workspace: &mut Workspace, args: ActionContext) -> Result<(), s
                         println!("Branch {} created.", value.branch);
 
                         if value.swap {
-                           let switchCommand = branches::BranchAction::Switch(branches::SwitchBranch {
-                               branch: value.branch,
-                           });
+                            let switchCommand =
+                                branches::BranchAction::Switch(branches::SwitchBranch {
+                                    branch: value.branch,
+                                });
 
-                            handleCommand(workspace, ActionContext::Branch(branches::BranchComand {
-                                 action: switchCommand,
-                            }))?;
+                            handleCommand(
+                                workspace,
+                                ActionContext::Branch(branches::BranchComand {
+                                    action: switchCommand,
+                                }),
+                            )?;
 
                             if value.save {
                                 handleCommand(workspace, ActionContext::Save)?;
