@@ -78,6 +78,9 @@ This is not a mod manager. This is not a mod installer. This is not a mod loader
 
 - [x] Initialise a workspace
 - [x] Create branches
+- [X] Switch branches
+  - [X] Switch to a specific branch
+  - [X] Save the current state of the src folder after switching
 - [x] Save current state of src to current branch
   - [X] Save recursively or only top level src files
   - [ ] Limit saving to specific file types
@@ -93,8 +96,6 @@ This is not a mod manager. This is not a mod installer. This is not a mod loader
   - [ ] Taget specific files types 
   - [ ] Work with [Yabber](https://github.com/JKAnderson/Yabber)
   - [ ] Work with [WitchBND](https://github.com/ividyon/WitchyBND)
-  - [ ] Global unpack/pack (not needing a workspace)
-  - [ ] Workspace unpack/pack
   - [ ] Use .workfiles to target what files to unpack/pack
   - [ ] Use .ignore to ignore files
 - [ ] Convert Images to DDS using [ImageMagick](https://github.com/ImageMagick/ImageMagick)
