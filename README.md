@@ -100,15 +100,16 @@ This is not a mod manager. This is not a mod installer. This is not a mod loader
   - [X] Switch to a specific branch
   - [X] Save the current state of the src folder after switching
 - [x] Save current state of src to current branch
-  - [X] Save recursively or only top level src files
-  - [X] Limit saving to specific file types
+  - [X] Save recursively
   - [X] Save per version
-  - [ ] Use .ignore file to ignore files
-  - [ ] Avoid Repeating files by keeping a hashcheck of the files and only saving new files (should be a setting)
+  - [X] Use .ignore file to ignore files
+  - [X] Adding ! to file allows to include the file
+  - [ ] Avoid Repeating files by keeping a hashcheck of the files and only saving new files (should be a setting) (optional)
 - [X] Delete branches
-- [ ] Restore branches
-  - [ ] Restore to latest version 
-  - [ ] Restore to a specific version
+  - [X] Don't delete current branch
+- [X] Restore branches
+  - [X] Restore to latest version 
+  - [X] Restore to a specific version
   - [ ] Restore a specific file to a specific version
 - [ ] Unpack/Pack files
   - [ ] Taget specific files types 
@@ -125,4 +126,5 @@ This is not a mod manager. This is not a mod installer. This is not a mod loader
 - [ ] Export to mods folder
     - [ ] use .targets to decide what files go where in the mods folder (use pattern matching to decide) (optional)
 - [ ] Launch game
+- [ ] On first launch, Do a config walkthrough to set up the paths for the extra software that is required to be used
 - [ ] Better Documentation

@@ -1,162 +1,180 @@
-#![allow(non_snake_case)]
-use args::{branches, ActionContext};
-use clap::{error::Error, Parser};
-use mod_info::ModInfo;
-use workspace_handler::Workspace;
+use std::env;
 
-use crate::workspace_handler::SwitchResult;
+use args::{
+    branches::{BranchAction, SwitchBranch},
+    ActionContext, CliArgs,
+};
+use clap::Parser;
+use file_handler::FileHandler;
+use models::{
+    branch::Branch,
+    mod_info::ModInfo,
+};
+use workspace::Workspace;
 
 mod args;
-mod branch;
-mod mod_info;
-mod workspace_handler;
+mod file_filter;
+mod file_handler;
+mod models;
+mod workspace;
 
-fn main() -> Result<(), Error> {
-    let args = args::CliArgs::parse();
+static DEFAULT_BRANCH: &str = "main";
 
-    let workspace = Workspace::load_workspace();
+type Result<T> = std::result::Result<T, ExecError>;
 
-    let mut workspace = match workspace {
-        Ok(workspace) => workspace,
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::NotFound => {
-                match args.action_context {
-                    ActionContext::Init(command) => {
-                        let mut current_folder = std::env::current_dir()?;
+#[derive(Debug, thiserror::Error)]
+pub enum ExecError {
+    #[error("Error: {0}")]
+    Error(String),
 
-                        if let Some(folder_name) = command.folderName {
-                            current_folder.push(folder_name);
-                        }
+    #[error("FileHandler Error: {0}")]
+    FileHandler(#[from] file_handler::Error),
 
-                        println!(
-                            "Initializing workspace in: {},",
-                            current_folder.to_str().unwrap()
-                        );
+    #[error("Workspace Error: {0}")]
+    Workspace(#[from] workspace::WorkspaceError),
+}
 
-                        let mod_info = getModInfoFromUser();
-                        let result = Workspace::init(current_folder, mod_info);
+fn main() {
+    let args = CliArgs::parse();
 
-                        match result {
-                            Ok(workspace) => workspace,
-                            Err(e) => {
-                                println!("Failed to initialize workspace: {}", e);
-                                return Ok(());
-                            }
-                        };
-
-                        return Ok(());
-                    }
-                    _ => {
-                        println!("You need to initialize a workspace first.\nUse 'ModderCli -h' for help.");
-                        return Ok(());
-                    }
-                };
-            }
-            _ => {
-                println!("Failed to load workspace: {}", err);
-                return Ok(());
-            }
-        },
+    let root = match file_handler::FileHandler::find_root() {
+        Ok(root) => root,
+        Err(e) => {
+            eprintln!("Error finding root: {}", e);
+            return;
+        }
     };
 
-    handleCommand(&mut workspace, args.action_context)?;
+    let Some(root) = root else {
+        // if init command then return current directory
+        if let ActionContext::Init(command) = args.action_context {
+            let mut root = env::current_dir().unwrap();
 
-    workspace.save()?;
+            if let Some(folder_name) = command.folder_name {
+                root.push(folder_name);
+            }
 
-    Ok(())
+            let mod_info = get_user_mod_input();
+            let file_manager = FileHandler::new(root);
+
+            let res = file_manager
+                .create_workspace(&mod_info, &vec![Branch::new(DEFAULT_BRANCH.to_string(), 0)]);
+
+            if let Err(e) = res {
+                eprintln!("Error creating workspace: {}", e);
+            }
+        } else {
+            panic!("No mod found in current directory or any of its parents");
+        }
+
+        return;
+    };
+
+    let mut file_handler = file_handler::FileHandler::new(root);
+    let mod_info = match file_handler.load_info() {
+        Ok(info) => info,
+        Err(e) => {
+            panic!("Error loading mod info: {}", e);
+        }
+    };
+    let branches = match file_handler.load_branches() {
+        Ok(branches) => branches,
+        Err(e) => {
+            panic!("Error loading branches: {}", e);
+        }
+    };
+
+    let pattens = match file_handler.load_ignore() {
+        Ok(patterns) => patterns,
+        Err(e) => {
+            panic!("Error loading ignore patterns: {}", e);
+        }
+    };
+
+    match file_handler.init_filter(pattens) {
+        Ok(_) => {}
+        Err(e) => {
+            panic!("Error initializing file filter: {}", e);
+        }
+    }
+
+    let mut workspace = Workspace::new(mod_info, branches);
+    match handle_command(args.action_context, &mut workspace, &file_handler) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Error handling command: {}", e);
+        }
+    }
+
+    match file_handler.save_info(&workspace.mod_info) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Error saving mod info: {}", e);
+        }
+    }
+
+    match file_handler.save_branches(&workspace.branches) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Error saving branches: {}", e);
+        }
+    }
 }
 
-fn handleCommand(workspace: &mut Workspace, args: ActionContext) -> Result<(), std::io::Error> {
-    match args {
+fn handle_command(
+    command: ActionContext,
+    workspace: &mut Workspace,
+    file_handler: &FileHandler,
+) -> Result<()> {
+    match command {
         ActionContext::Init(_) => {
-            println!("You have already initialized a workspace.");
+            // Project already initialized
+            print!("Project already initialized");
         }
-        ActionContext::Branch(branch) => match branch.action {
-            branches::BranchAction::Switch(value) => {
-                let res = workspace.switch_branch(&value.branch);
-
-                match res {
-                    Ok(e) => match e {
-                        SwitchResult::Success => {
-                            println!("Switched to branch: {}", value.branch);
-                        }
-                        SwitchResult::AlreadtInBranch => {
-                            println!("Already in branch: {}", value.branch);
-                        }
-                        SwitchResult::NoFileMove => {
-                            println!("Switched to branch: {}", value.branch);
-                            println!(
-                                "No files were moved to the src folder as the branch is empty."
-                            );
-                        }
-                    },
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::NotFound => {
-                            println!("Branch {} not found.", value.branch);
-                        }
-                        _ => {
-                            println!("Failed to switch branch: {}", e);
-                        }
-                    },
-                }
-            }
-            branches::BranchAction::Create(value) => {
-                let branch = branch::Branch::new(value.branch.clone(), "New branch".to_string(), 1);
-                let res = workspace.add_branch(branch);
-
-                match res {
-                    Ok(_) => {
-                        println!("Branch {} created.", value.branch);
-
-                        if value.swap {
-                            let switchCommand =
-                                branches::BranchAction::Switch(branches::SwitchBranch {
-                                    branch: value.branch,
-                                });
-
-                            handleCommand(
-                                workspace,
-                                ActionContext::Branch(branches::BranchComand {
-                                    action: switchCommand,
-                                }),
-                            )?;
-
-                            if value.save {
-                                handleCommand(workspace, ActionContext::Save)?;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Failed to create branch: {}", e);
-                    }
-                }
-            }
-            branches::BranchAction::Delete(value) => {
-                let res = workspace.remove_branch_by_name(&value.value);
-
-                match res {
-                    Ok(_) => {
-                        println!("Branch {} deleted.", value.value);
-                    }
-                    Err(e) => {
-                        println!("Failed to delete branch: {}", e);
-                    }
-                }
-            }
-            branches::BranchAction::List => {
-                ListBranches(&workspace)?;
-            }
-        },
         ActionContext::Save => {
-            let res = workspace.save_current_state();
+            // Save the current state of the mod to the current branch
+            let branch = workspace.mod_info.current_branch.clone();
 
-            match res {
-                Ok(_) => {
-                    println!("Workspace saved.");
-                }
-                Err(e) => {
-                    println!("Failed to save workspace: {}", e);
-                }
+            let (branch_path, new_version) = {
+                let Some(branch) = workspace.get_branch(&branch) else {
+                    return Err(ExecError::Error("Branch not found".to_string()));
+                };
+
+                (file_handler.get_branch_folder(branch), branch.version + 1)
+            };
+
+            workspace.change_branch_version(&branch, new_version)?;
+
+            let branch_path = branch_path.join(new_version.to_string());
+
+            file_handler.filter_copy_src(&branch_path)?;
+        }
+        ActionContext::Branch(command) => {
+            handle_branch_action(command.action, workspace, file_handler)?
+        }
+        ActionContext::Restore(command) => {
+            let branch = workspace.mod_info.current_branch.clone();
+
+            let (branch_path, version) = {
+                let Some(branch) = workspace.get_branch(&branch) else {
+                    return Err(ExecError::Error("Branch not found".to_string()));
+                };
+
+                (file_handler.get_branch_folder(branch), branch.version)
+            };
+
+            let version = match command.version {
+                Some(version) => version,
+                None => version,
+            };
+
+            let version_path = branch_path.join(version.to_string());
+
+            if version_path.exists() {
+                file_handler.filter_copy_to_src(&version_path)?;
+            }
+            else {
+                file_handler.remove_folder_content(&file_handler.get_src())?;
             }
         }
     }
@@ -164,45 +182,93 @@ fn handleCommand(workspace: &mut Workspace, args: ActionContext) -> Result<(), s
     Ok(())
 }
 
-fn getModInfoFromUser() -> mod_info::ModInfo {
-    // Get the mod info from the user
-    // Get Mod Name
-    println!("Enter mod name: ");
-    let mut name = String::new();
-    std::io::stdin()
-        .read_line(&mut name)
-        .expect("Failed to read line");
-    let name = name.trim().to_string();
+fn handle_branch_action(
+    command: BranchAction,
+    workspace: &mut Workspace,
+    file_handler: &FileHandler,
+) -> Result<()> {
+    match command {
+        BranchAction::Create(command) => {
+            let branch = Branch::new(command.branch.clone(), 0);
+            file_handler.create_branch(&branch)?;
+            workspace.add_branch(branch)?;
 
-    // Get mod author
-    println!("Enter mod author: ");
-    let mut author = String::new();
-    std::io::stdin()
-        .read_line(&mut author)
-        .expect("Failed to read line");
-    let author = author.trim().to_string();
+            file_handler.save_info(&workspace.mod_info)?;
+            file_handler.save_branches(&workspace.branches)?;
 
-    // Get mod description
-    println!("Enter mod description: ");
-    let mut description = String::new();
-    std::io::stdin()
-        .read_line(&mut description)
-        .expect("Failed to read line");
-    let description = description.trim().to_string();
+            if command.swap {
+                workspace.mod_info.current_branch = command.branch.clone();
 
-    return ModInfo::new(name, author, description, Some("main".to_string()));
-}
+                let switch_branch = SwitchBranch {
+                    branch: command.branch.clone(),
+                };
 
-fn ListBranches(workspace: &Workspace) -> Result<(), std::io::Error> {
-    // List all branches
-    println!("Branches:");
+                let branch_action = BranchAction::Switch(switch_branch);
 
-    for branch in &workspace.branches {
-        println!(
-            "• {} (v.{}): {}",
-            branch.name, branch.version, branch.description
-        );
+                handle_branch_action(branch_action, workspace, file_handler)?;
+
+                if command.save {
+                    let save_command = ActionContext::Save;
+                    handle_command(save_command, workspace, &file_handler)?
+                }
+            }
+        }
+        BranchAction::Switch(command) => {
+            let branch = workspace
+                .get_branch(&command.branch)
+                .ok_or_else(|| ExecError::Error(format!("Branch {} not found", command.branch)))?;
+
+            let branch_path = file_handler.get_branch_folder(branch);
+            let version_path = branch_path.join(branch.version.to_string());
+
+            if version_path.exists() {
+                file_handler.filter_copy_to_src(&version_path)?;
+            } else {
+                println!("Branch Version doesn't exist");
+            }
+
+            workspace.mod_info.current_branch = command.branch.clone();
+
+            file_handler.save_info(&workspace.mod_info)?;
+        }
+        BranchAction::Delete(command) => {
+            if command.value == workspace.mod_info.current_branch {
+                return Err(ExecError::Error("Cannot delete current branch".to_string()));
+            }
+
+            let branch = workspace
+                .get_branch(&command.value)
+                .ok_or_else(|| ExecError::Error(format!("Branch {} not found", command.value)))?;
+
+            let branch_path = file_handler.get_branch_folder(branch);
+
+            file_handler.remove_branch(&branch_path)?;
+
+            workspace.branches.retain(|b| b.name != command.value);
+
+            file_handler.save_info(&workspace.mod_info)?;
+            file_handler.save_branches(&workspace.branches)?;
+        }
+        _ => {
+            panic!("Command not implemented")
+        }
     }
 
     Ok(())
+}
+
+fn get_user_mod_input() -> ModInfo {
+    let name = get_user_input("Enter the name of the mod: ");
+    let description = get_user_input("Enter the description of the mod: ");
+    let version = get_user_input("Enter the version of the mod: ");
+
+    ModInfo::new(name, description, version, DEFAULT_BRANCH.to_string())
+}
+
+fn get_user_input(prompt: &str) -> String {
+    println!("{}", prompt);
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    input.trim().to_string()
 }

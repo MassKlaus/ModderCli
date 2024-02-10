@@ -27,6 +27,7 @@ pub struct CreateBranch {
     pub save: bool,
 }
 
+
 #[derive(Debug, Subcommand)]
 pub enum BranchAction {
     /// Switch to a different branch

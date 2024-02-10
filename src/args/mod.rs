@@ -1,9 +1,9 @@
 use clap::{Args, Parser, Subcommand};
 
-pub mod value;
-pub mod branches;
-
 use branches::BranchComand;
+
+pub mod value;
+pub mod branches;   
 
 #[derive(Parser, Debug)]
 #[command()]
@@ -11,16 +11,27 @@ use branches::BranchComand;
 pub struct CliArgs {
     #[command(subcommand)]
     pub action_context: ActionContext,
+
+    #[arg(short='F', long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug)]
 pub struct InitCommand {
-    pub folderName: Option<String>,
+    pub folder_name: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct RestoreBranch {
+    pub version: Option<i32>,
+
+    #[arg(short, long)]
+    pub file: Option<String>,
+
 }
 
 #[derive(Debug, Subcommand)]
 pub enum ActionContext {
-
     /// Initialize a new workspace in the current directory
     Init(InitCommand),
 
@@ -29,4 +40,6 @@ pub enum ActionContext {
 
     /// Save the current state of the mod to the current branch
     Save,
+
+    Restore(RestoreBranch),
 }
